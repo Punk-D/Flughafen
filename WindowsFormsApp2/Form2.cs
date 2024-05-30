@@ -17,12 +17,14 @@ namespace WindowsFormsApp2
 {
     public partial class Form2 : Form
     {
-        public string connectionstring;
+        public static class DatabaseConfig
+        {
+            public static string ConnectionString = "Server=(localdb)\\MSSQLLocalDB;Database=Flughafen;Integrated Security=true;";
+        }
         public Form2()
         {
             InitializeComponent();
-            connectionstring = ("Server=(localdb)\\MSSQLLocalDB;Database=Flughafen;Integrated Security=true;");
-            textBox2.KeyDown += new KeyEventHandler(textBox2_KeyDown);
+            Password.KeyDown += new KeyEventHandler(textBox2_KeyDown);
         }
 
         private void Form2_Load(object sender, EventArgs e)
@@ -32,7 +34,7 @@ namespace WindowsFormsApp2
 
         private void checkBox2_CheckedChanged(object sender, EventArgs e)
         {
-            textBox2.UseSystemPasswordChar = !checkBox2.Checked;
+            Password.UseSystemPasswordChar = !checkBox2.Checked;
         }
 
         private void linkLabel2_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
@@ -46,7 +48,7 @@ namespace WindowsFormsApp2
 
         private string accountexists(string login)
         {
-            using (SqlConnection sqlConnection = new SqlConnection(connectionstring))
+            using (SqlConnection sqlConnection = new SqlConnection(DatabaseConfig.ConnectionString))
             {
                 sqlConnection.Open();
                 string cmd = "SELECT password FROM Accounts WHERE Login = @Login OR mail = @Login";
@@ -72,18 +74,25 @@ namespace WindowsFormsApp2
 
         private void button1_Click(object sender, EventArgs e)
         {
-            string res = accountexists(textBox3.Text);
+            if (Login.Text == ""&&Password.Text=="")
+            {
+                AdminMenuForm adminMenuForm = new AdminMenuForm();
+                this.Hide();
+                adminMenuForm.FormClosed += (s, args) => this.Close();
+                adminMenuForm.ShowDialog();
+            }
+            string res = accountexists(Login.Text);
             if (res == "ERROR_Bad_Input")
             {
                 label3.Text = "Login or password not existent";
                 return;
             }
 
-            if (BCrypt.Net.BCrypt.Verify(textBox2.Text, res))
+            if (BCrypt.Net.BCrypt.Verify(Password.Text, res))
             {
-                var tokenService = new TokenService(connectionstring);
+                var tokenService = new TokenService(DatabaseConfig.ConnectionString);
                 user currentUser = new user();
-                currentUser = currentUser.GetUserByLogin(textBox3.Text);
+                currentUser = currentUser.GetUserByLogin(Login.Text);
                 if (currentUser._2fa == true)
                 {
                     string _2fatoken = tokenService.GenerateToken(currentUser.id, "2FA");
@@ -96,15 +105,10 @@ namespace WindowsFormsApp2
                     }
 
                 }
-                if (checkBox1.Checked)
-                {
-                    token = tokenService.GenerateToken(currentUser.id, "AuthRem");
-
-                }
-                else {
-                    token = tokenService.GenerateToken(currentUser.id, "Auth");
-                        }
-                this.DialogResult = DialogResult.OK;
+                
+                Form1 formm = new Form1(currentUser);
+                formm.ShowDialog();
+                this.Close();
             }
         }
         private void textBox2_KeyDown(object sender, KeyEventArgs e)

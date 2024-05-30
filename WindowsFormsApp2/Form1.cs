@@ -5,6 +5,8 @@ using System.Net;
 using System.Windows.Forms;
 using MailKit.Net.Smtp;
 using MimeKit;
+using static WindowsFormsApp2.Form2;
+using static WindowsFormsApp2.AddFlight;
 
 namespace WindowsFormsApp2
 {
@@ -61,18 +63,61 @@ namespace WindowsFormsApp2
             public string login;
             public string password;
             public string email;
-            public int LOA;
             public bool verified;
             public bool _2fa;
 
             public static string connectionString = ("Server=(localdb)\\MSSQLLocalDB;Database=Flughafen;Integrated Security=true;");
+
+            public string BookTicket(int flightID, string passengerName, string passengerSurname)
+            {
+                try
+                {
+                    using (SqlConnection sqlConnection = new SqlConnection(connectionString))
+                    {
+                        sqlConnection.Open();
+
+                        // Update the first ticket with NULL AccountID for the given flight
+                        string updateTicketCmd = @"
+                UPDATE TOP (1) Tickets
+                SET AccountID = @UserID,
+                    PassengerName = @PassengerName,
+                    PassengerSurname = @PassengerSurname
+                WHERE FlightID = @FlightID
+                AND AccountID IS NULL";
+
+                        using (SqlCommand command = new SqlCommand(updateTicketCmd, sqlConnection))
+                        {
+                            command.Parameters.AddWithValue("@FlightID", flightID);
+                            command.Parameters.AddWithValue("@UserID", this.id);
+                            command.Parameters.AddWithValue("@PassengerName", passengerName);
+                            command.Parameters.AddWithValue("@PassengerSurname", passengerSurname);
+
+                            int rowsAffected = command.ExecuteNonQuery();
+
+                            if (rowsAffected > 0)
+                            {
+                                return "OK";
+                            }
+                            else
+                            {
+                                return "ERROR_No_ticket_found";
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log the exception (ex) if needed
+                    return "ERROR_Database_issue";
+                }
+            }
 
             public user GetUserByLogin(string login)
             {
                 using (SqlConnection sqlConnection = new SqlConnection(connectionString))
                 {
                     sqlConnection.Open();
-                    string cmdText = "SELECT ID, Login, password, mail, LOA, verified, _2fa FROM Accounts WHERE Login = @Login OR mail = @Login";
+                    string cmdText = "SELECT ID, Login, password, mail, verified, _2fa FROM Accounts WHERE Login = @Login OR mail = @Login";
 
                     using (SqlCommand command = new SqlCommand(cmdText, sqlConnection))
                     {
@@ -88,7 +133,6 @@ namespace WindowsFormsApp2
                                     string llogin = reader["Login"].ToString();
                                     string ppassword = reader["password"].ToString();
                                     string eemail = reader["mail"].ToString();
-                                    int LLOA = Convert.ToInt32(reader["LOA"]);
                                     bool bverified = Convert.ToBoolean(reader["verified"]);
                                     bool b_2fa = Convert.ToBoolean(reader["_2fa"]);
                                 
@@ -99,7 +143,6 @@ namespace WindowsFormsApp2
                                 foundUser.password = ppassword;
                                 foundUser.verified = bverified;
                                 foundUser._2fa = b_2fa;
-                                foundUser.LOA = LLOA;
 
                                 return foundUser;
                             }
@@ -125,7 +168,6 @@ namespace WindowsFormsApp2
                     SET 
                         password = @Password,
                         mail = @Email,
-                        LOA = @LOA,
                         verified = @Verified,
                         _2fa = @TwoFA
                     WHERE
@@ -136,7 +178,6 @@ namespace WindowsFormsApp2
                             command.Parameters.AddWithValue("@Login", this.login);
                             command.Parameters.AddWithValue("@Password", (this.password)); // Hashing the password before storing
                             command.Parameters.AddWithValue("@Email", this.email);
-                            command.Parameters.AddWithValue("@LOA", this.LOA);
                             command.Parameters.AddWithValue("@Verified", this.verified);
                             command.Parameters.AddWithValue("@TwoFA", this._2fa);
 
@@ -277,508 +318,123 @@ namespace WindowsFormsApp2
                 }
             }
         }
-
-        public class DatabaseManager
+        public user userr;
+        public Form1(user userr)
         {
-            private readonly string connectionString;
-
-            public System.Data.DataTable GetScheduleByDestinationAndTime(string destinationAirportCode, DateTime startTime, DateTime endTime)
-            {
-                System.Data.DataTable schedule = new System.Data.DataTable();
-
-                try
-                {
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        using (SqlCommand command = new SqlCommand("dbo.GetScheduleByDestinationAndTime", connection))
-                        {
-                            command.CommandType = CommandType.StoredProcedure;
-                            command.Parameters.AddWithValue("@DestinationAirportCode", destinationAirportCode);
-                            command.Parameters.AddWithValue("@StartTime", startTime);
-                            command.Parameters.AddWithValue("@EndTime", endTime);
-                            connection.Open();
-
-                            using (SqlDataAdapter adapter = new SqlDataAdapter(command))
-                            {
-                                adapter.Fill(schedule);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Handle exception
-                    MessageBox.Show("Error: " + ex.Message);
-                }
-
-                return schedule;
-            }
-
-            public System.Data.DataTable GetTimetableByDestination(string destinationAirportCode)
-            {
-                System.Data.DataTable timetable = new System.Data.DataTable();
-
-                try
-                {
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        using (SqlCommand command = new SqlCommand("dbo.GetTimetableByDestination", connection))
-                        {
-                            command.CommandType = CommandType.StoredProcedure;
-                            command.Parameters.AddWithValue("@DestinationAirportCode", destinationAirportCode);
-                            connection.Open();
-
-                            using (SqlDataAdapter adapter = new SqlDataAdapter(command))
-                            {
-                                adapter.Fill(timetable);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Handle exception
-                    Console.WriteLine("Error: " + ex.Message);
-                }
-
-                return timetable;
-            }
-
-            public String GetLongestFlight()
-            {
-                string longestFlight = "";
-                try
-                {
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        using (SqlCommand command = new SqlCommand("SELECT TOP 1 FlightCode FROM Flights ORDER BY Distance DESC", connection))
-                        {
-                            connection.Open();
-                            object result = command.ExecuteScalar();
-                            if (result != DBNull.Value)
-                            {
-                                return longestFlight = result.ToString();
-                            }
-                            return longestFlight;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Handle exception
-                    return longestFlight = ("Error: " + ex.Message);
-                }
-            }
-
-            public decimal GetAverageTicketPriceByDestination(string destinationAirportCode)
-            {
-                decimal averagePrice = 0;
-
-                try
-                {
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        using (SqlCommand command = new SqlCommand("GetAverageTicketPriceByDestination", connection))
-                        {
-                            command.CommandType = CommandType.StoredProcedure;
-                            command.Parameters.AddWithValue("@DestinationAirportCode", destinationAirportCode);
-                            connection.Open();
-                            object result = command.ExecuteScalar();
-                            if (result != DBNull.Value)
-                            {
-                                averagePrice = Convert.ToDecimal(result);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Handle exception
-                    MessageBox.Show("Error: " + ex.Message);
-                }
-
-                return averagePrice;
-            }
-
-            public DatabaseManager(string connectionString)
-            {
-                this.connectionString = connectionString;
-            }
-
-            public void CreateWeekdayFlightTable(int weekday)
-            {
-                try
-                {
-                    string weekdayName = GetWeekdayName(weekday);
-                    string tableName = "Flights_" + weekdayName;
-
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        connection.Open();
-                        SqlCommand command = new SqlCommand("CreateWeekdayFlightTable", connection);
-                        command.CommandType = System.Data.CommandType.StoredProcedure;
-                        command.Parameters.AddWithValue("@Weekday", weekday);
-                        command.ExecuteNonQuery();
-                    }
-
-                    MessageBox.Show("Table created successfully: " + tableName, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        connection.Open();
-                        SqlCommand command = new SqlCommand("FillWeekdayFlightTable", connection);
-                        command.CommandType = System.Data.CommandType.StoredProcedure;
-                        command.Parameters.AddWithValue("@Weekday", weekday);
-                        command.ExecuteNonQuery();
-                    }
-                    MessageBox.Show("Table populated successfully: " + tableName, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Error creating table: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-
-            private string GetWeekdayName(int weekday)
-            {
-                switch (weekday)
-                {
-                    case 0: return "Monday";
-                    case 1: return "Tuesday";
-                    case 2: return "Wednesday";
-                    case 3: return "Thursday";
-                    case 4: return "Friday";
-                    case 5: return "Saturday";
-                    case 6: return "Sunday";
-                    default: throw new ArgumentException("Invalid weekday number.");
-                }
-            }
-
-            public string GetAllAirportCodes()
-            {
-                using (SqlConnection connection = new SqlConnection(connectionString))
-                {
-                    string query = "SELECT AirportCode FROM Airports";
-                    using (SqlCommand command = new SqlCommand(query, connection))
-                    {
-                        connection.Open();
-                        SqlDataReader reader = command.ExecuteReader();
-                        string airportCodes = "";
-                        while (reader.Read())
-                        {
-                            airportCodes += reader["AirportCode"].ToString() + Environment.NewLine;
-                        }
-                        return airportCodes;
-                    }
-                }
-            }
-
-            public string GetAllAirplaneCodes()
-            {
-                using (SqlConnection connection = new SqlConnection(connectionString))
-                {
-                    string query = "SELECT PlaneCode FROM Planes";
-                    using (SqlCommand command = new SqlCommand(query, connection))
-                    {
-                        connection.Open();
-                        SqlDataReader reader = command.ExecuteReader();
-                        string airplaneCodes = "";
-                        while (reader.Read())
-                        {
-                            airplaneCodes += reader["PlaneCode"].ToString() + Environment.NewLine;
-                        }
-                        return airplaneCodes;
-                    }
-                }
-            }
-
-            public string GetAllFlightCodes()
-            {
-                using (SqlConnection connection = new SqlConnection(connectionString))
-                {
-                    string query = "SELECT FlightCode FROM Flights";
-                    using (SqlCommand command = new SqlCommand(query, connection))
-                    {
-                        connection.Open();
-                        SqlDataReader reader = command.ExecuteReader();
-                        string flightCodes = "";
-                        while (reader.Read())
-                        {
-                            flightCodes += reader["FlightCode"].ToString() + Environment.NewLine;
-                        }
-                        return flightCodes;
-                    }
-                }
-            }
-
-            public void RegisterNewFlight(string flightCode, string destination, string planeCode, DateTime departure)
-            {
-                using (SqlConnection connection = new SqlConnection(connectionString))
-                {
-                    // First, retrieve the PlaneID based on the PlaneCode
-                    int planeId;
-                    string planeIdQuery = "SELECT PlaneID FROM Planes WHERE PlaneCode = @PlaneCode";
-                    using (SqlCommand planeIdCommand = new SqlCommand(planeIdQuery, connection))
-                    {
-                        planeIdCommand.Parameters.AddWithValue("@PlaneCode", planeCode);
-                        connection.Open();
-                        // ExecuteScalar is used to retrieve a single value from the query result
-                        planeId = (int)planeIdCommand.ExecuteScalar();
-                    }
-
-                    // Now that we have the PlaneID, we can insert the new flight record
-                    string query = "INSERT INTO Flights (FlightCode, Destination, Plane, DepartureTime) " +
-                                   "VALUES (@FlightCode, @Destination, @PlaneID, @Departure)";
-                    using (SqlCommand command = new SqlCommand(query, connection))
-                    {
-                        command.Parameters.AddWithValue("@FlightCode", flightCode);
-                        command.Parameters.AddWithValue("@Destination", destination);
-                        command.Parameters.AddWithValue("@PlaneID", planeId); // Use PlaneID instead of PlaneCode
-                        command.Parameters.AddWithValue("@Departure", departure);
-                        command.ExecuteNonQuery();
-                    }
-                }
-            }
-
-            public void RegisterPassengerForFlight(string flightCode, string passengerName, string passengerSurname, decimal ticketPrice)
-            {
-                try
-                {
-                    // Retrieve the FlightID associated with the FlightCode
-                    int flightId;
-                    string flightIdQuery = "SELECT FlightID FROM Flights WHERE FlightCode = @FlightCode";
-                    using (SqlConnection connection = new SqlConnection(connectionString))
-                    {
-                        using (SqlCommand flightIdCommand = new SqlCommand(flightIdQuery, connection))
-                        {
-                            flightIdCommand.Parameters.AddWithValue("@FlightCode", flightCode);
-                            connection.Open();
-                            flightId = (int)flightIdCommand.ExecuteScalar();
-                        }
-                    }
-
-                    // Check if there are free seats for the flight
-                    if (GetFreeSeatsByFlightCode(flightCode) > 0)
-                    {
-                        using (SqlConnection connection = new SqlConnection(connectionString))
-                        {
-                            string query = "INSERT INTO Tickets (FlightID, PassengerName, PassengerSurname, Price) " +
-                                           "VALUES (@FlightID, @PassengerName, @PassengerSurname, @TicketPrice)";
-                            using (SqlCommand command = new SqlCommand(query, connection))
-                            {
-                                command.Parameters.AddWithValue("@FlightID", flightId);
-                                command.Parameters.AddWithValue("@PassengerName", passengerName);
-                                command.Parameters.AddWithValue("@PassengerSurname", passengerSurname);
-                                command.Parameters.AddWithValue("@TicketPrice", ticketPrice);
-                                connection.Open();
-                                command.ExecuteNonQuery();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("No free seats available for the flight.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException("Error registering passenger for flight: " + ex.Message);
-                }
-            }
-
-            public int GetFreeSeatsByFlightCode(string flightCode)
-            {
-                using (SqlConnection connection = new SqlConnection(connectionString))
-                {
-                    string query = "EXEC GetFreeSeatsByFlightCode @FlightCode ";
-
-                    using (SqlCommand command = new SqlCommand(query, connection))
-                    {
-                        command.Parameters.AddWithValue("@FlightCode", flightCode);
-                        connection.Open();
-                        object result = command.ExecuteScalar();
-                        if (result != null)
-                        {
-                            return Convert.ToInt32(result);
-                        }
-                        else
-                        {
-                            return 0;
-                        }
-                    }
-                }
-            }
-
-            // Implement other methods as needed
-        }
-
-        private void FillComboBoxes()
-        {
-            // Fill comboBox3, comboBox2, comboBox7, comboBox9, comboBox5, and comboBox8 with airport codes
-            FillComboBoxFromDatabase(comboBox2, databaseManager.GetAllAirportCodes());
-            FillComboBoxFromDatabase(comboBox7, databaseManager.GetAllAirportCodes());
-
-            FillComboBoxFromDatabase(comboBox5, databaseManager.GetAllAirportCodes());
-            FillComboBoxFromDatabase(comboBox8, databaseManager.GetAllAirportCodes());
-
-            // Fill comboBox4 with plane codes
-            FillComboBoxFromDatabase(comboBox4, databaseManager.GetAllAirplaneCodes());
-
-            // Fill comboBox1 with flight codes
-            FillComboBoxFromDatabase(comboBox1, databaseManager.GetAllFlightCodes());
-            FillComboBoxFromDatabase(comboBox9, databaseManager.GetAllFlightCodes());
-        }
-
-        private void FillComboBoxFromDatabase(System.Windows.Forms.ComboBox comboBox, string data)
-        {
-            // Clear existing items in the ComboBox
-            comboBox.Items.Clear();
-            // Split the data by newline character and add each item to the ComboBox
-            comboBox.Items.AddRange(data.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries));
-        }
-
-        public DatabaseManager databaseManager;
-        public string token;
-        public Form1()
-        {
-            Form2 Form22 = new Form2();
-            Form22.ShowDialog();
-            if (Form22.DialogResult == DialogResult.OK) { token = Form22.token; }
-            else {
-                MessageBox.Show("Failed to log in", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                this.Close();
-                return;
-            }
             InitializeComponent();
-            databaseManager = new DatabaseManager("Server=(localdb)\\MSSQLLocalDB;Database=Flughafen;Integrated Security=true;");
-            FillComboBoxes();
-        }
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-            try
+            
+            this.userr = userr;
+            dateTimePicker7.Value = dateTimePicker7.MinDate;
+            dateTimePicker1.Value = dateTimePicker1.MinDate;
+            DataTable airportsTable = GetAirports();
+            if (airportsTable != null)
             {
-                // Combine date and time from DateTimePicker controls
-                DateTime departureDateTime = dateTimePicker3.Value.Date + dateTimePicker4.Value.TimeOfDay;
-
-                // Call the RegisterNewFlight method with the input values
-                databaseManager.RegisterNewFlight(textBox1.Text, comboBox2.Text, comboBox4.Text, departureDateTime);
-
-                // Flight registration successful
-                label19.Text = "Flight registered successfully!";
-            }
-            catch (Exception ex)
-            {
-                // Flight registration failed, display error message
-                label19.Text = "Error: " + ex.Message;
-            }
-        }
-
-        private void timer1_Tick(object sender, EventArgs e)
-        {
-            FillComboBoxes();
-        }
-
-        private void button4_Click(object sender, EventArgs e)
-        {
-            FillComboBoxes();
-        }
-
-        private void button2_Click(object sender, EventArgs e)
-        {
-            {
-                // Get the input values from the form controls
-                string flightCode = comboBox1.SelectedItem?.ToString();
-                string name = textBox2.Text;
-                string surname = textBox3.Text;
-                decimal price = numericUpDown1.Value;
-
-                // Check if all required fields are filled
-                if (string.IsNullOrEmpty(flightCode) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(surname))
+                comboBox1.Items.Clear(); // Clear existing items
+                comboBox1.Items.Add("MUC");
+                foreach (DataRow row in airportsTable.Rows)
                 {
-                    label20.Text = "Please fill in all fields.";
-                    return;
-                }
-
-                try
-                {
-                    // Call the RegisterPassengerForFlight function in the Database Manager
-                    databaseManager.RegisterPassengerForFlight(flightCode, name, surname, price);
-                    label20.Text = "Flight registered successfully!";
-                }
-                catch (Exception ex)
-                {
-                    // Display the result
-                    label20.Text = "Error: " + ex.Message; ;
+                    comboBox1.Items.Add(row["AirportCode"].ToString());
                 }
             }
         }
 
-        private void groupBox2_Enter(object sender, EventArgs e)
+        private void GetFlightSchedule(DateTime startDate, DateTime endDate, string destination)
         {
-        }
+            // SQL query to select flight schedule between two dates and flying to the destination
+            string query = "SELECT * FROM Flights WHERE DepartureTime BETWEEN @StartDate AND @EndDate AND AirportCode = @Destination";
 
-        private void comboBox6_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            try
+            DataTable flightScheduleTable = new DataTable();
+
+            using (SqlConnection connection = new SqlConnection(DatabaseConfig.ConnectionString))
             {
-                // Get the selected index of comboBox6
-                int selectedIndex = comboBox6.SelectedIndex;
-
-                // Check if a valid index is selected (-1 represents no selection)
-                if (selectedIndex != -1)
+                using (SqlCommand command = new SqlCommand(query, connection))
                 {
-                    // Get the selected weekday number (0 for Monday, 1 for Tuesday, etc.)
-                    int weekday = selectedIndex;
+                    command.Parameters.AddWithValue("@StartDate", startDate);
+                    command.Parameters.AddWithValue("@EndDate", endDate);
+                    command.Parameters.AddWithValue("@Destination", destination);
 
-                    // Create an instance of the DatabaseManager class
-
-                    // Call the CreateWeekdayFlightTable method with the selected weekday
-                    databaseManager.CreateWeekdayFlightTable(weekday);
-
-                    // Update label16 with success message
-                    label16.Text = "Table created successfully.";
-                }
-                else
-                {
-                    // Update label16 with error message for no selection
-                    label16.Text = "Please select a weekday from the dropdown list.";
+                    try
+                    {
+                        connection.Open();
+                        SqlDataAdapter adapter = new SqlDataAdapter(command);
+                        adapter.Fill(flightScheduleTable);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("An error occurred while fetching flight schedule: " + ex.Message);
+                        return;
+                    }
                 }
             }
-            catch (Exception ex)
+
+            // Display the flight schedule
+            dataGridView1.DataSource = flightScheduleTable;
+        }
+
+        private void GetFlightsToDestination(string destination)
+        {
+            // SQL query to select all records of flights to the destination sorted by date
+            string query = "SELECT * FROM Flights WHERE AirportCode = @Destination ORDER BY DepartureTime";
+
+            DataTable flightsToDestinationTable = new DataTable();
+
+            using (SqlConnection connection = new SqlConnection(DatabaseConfig.ConnectionString))
             {
-                // Update label16 with error message for exception
-                label16.Text = "An error occurred: " + ex.Message;
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@Destination", destination);
+
+                    try
+                    {
+                        connection.Open();
+                        SqlDataAdapter adapter = new SqlDataAdapter(command);
+                        adapter.Fill(flightsToDestinationTable);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("An error occurred while fetching flights to destination: " + ex.Message);
+                        return;
+                    }
+                }
+            }
+
+            // Display the flights to destination sorted by date
+            dataGridView1.DataSource = flightsToDestinationTable;
+        }
+
+        private void dateTimePicker7_ValueChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+            if (dateTimePicker1.Value==dateTimePicker1.MinDate&&dateTimePicker7.Value==dateTimePicker7.MinDate)
+            {
+                GetFlightsToDestination(comboBox1.Text);
+            }
+            else
+            {
+                GetFlightSchedule(dateTimePicker1.Value.Date, dateTimePicker7.Value.Date, comboBox1.Text);
             }
         }
 
-        private void comboBox7_SelectedIndexChanged(object sender, EventArgs e)
+        private void Form1_Load(object sender, EventArgs e)
         {
-            string a = comboBox6.SelectedItem?.ToString();
-            label16.Text = databaseManager.GetAverageTicketPriceByDestination(a).ToString();
+
         }
 
-        private void button3_Click(object sender, EventArgs e)
+        private void dataGridView1_CellContentClick(object sender, DataGridViewCellEventArgs e)
         {
-            label16.Text = databaseManager.GetLongestFlight().ToString();
-        }
+            if (e.RowIndex >= 0) // Check if a valid row index is clicked
+            {
+                DataGridViewRow selectedRow = dataGridView1.Rows[e.RowIndex];
+                int flightCode = (int)selectedRow.Cells["FlightID"].Value; // Assuming FlightCode is the column name
 
-        private void comboBox9_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            label16.Text = databaseManager.GetFreeSeatsByFlightCode(comboBox9.SelectedItem?.ToString()).ToString();
-        }
-
-        private void comboBox5_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            dataGridView1.DataSource = databaseManager.GetTimetableByDestination(comboBox5.SelectedItem?.ToString());
-        }
-
-        private void comboBox8_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            DateTime DateTime1 = dateTimePicker6.Value.Date + dateTimePicker5.Value.TimeOfDay;
-            DateTime DateTime2 = dateTimePicker2.Value.Date + dateTimePicker1.Value.TimeOfDay;
-            string destination = comboBox8.SelectedItem?.ToString();
-            dataGridView2.DataSource = databaseManager.GetScheduleByDestinationAndTime(destination, DateTime1, DateTime2);
+                // Open the BookFlightForm with the selected flight code
+                BookFlightForm bookFlightForm = new BookFlightForm(flightCode, userr);
+                bookFlightForm.ShowDialog();
+            }
         }
     }
 }
